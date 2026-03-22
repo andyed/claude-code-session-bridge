@@ -59,9 +59,23 @@ When responding to peer queries (in listen mode), **include actual code** — do
 
 When querying a peer, if you need their actual file content, ask specifically — e.g., "Send me the contents of your config file" or "What does the function signature look like? Include the actual code."
 
-## Listening Mode (`/bridge listen`)
+## Cooperative Listening (Default)
 
-When the user runs `/bridge listen`, you enter a **continuous listening loop**:
+You do **not** need to run `/bridge listen` to receive messages. The `UserPromptSubmit` hook automatically runs `check-inbox.sh` on every user turn. When pending messages are found, they appear as a system message at the start of your turn.
+
+**How it works:**
+1. A peer sends you a query via `send-message.sh`
+2. Next time your user types anything, the hook fires and injects the pending message
+3. You respond to the query first (using `send-message.sh`), then continue with the user's actual request
+4. The peer's `bridge-receive.sh` picks up your response
+
+**This is the recommended mode for most workflows.** Both sessions stay productive — neither blocks waiting.
+
+**Tradeoff:** Responses arrive when your user next interacts. If your user is idle for minutes, queries sit unanswered. For time-sensitive coordination where instant response matters, use `/bridge listen` instead.
+
+## Dedicated Listening Mode (`/bridge listen`)
+
+When the user runs `/bridge listen`, you enter a **continuous listening loop** that dedicates this session to answering peer queries:
 
 1. Run `bridge-listen.sh` (blocks until a message arrives)
 2. Read and respond to the message using `TO_ID` from the output as your session ID
@@ -69,6 +83,8 @@ When the user runs `/bridge listen`, you enter a **continuous listening loop**:
 4. Repeat forever until user presses Ctrl+C
 
 **You MUST keep the loop going.** After every response, immediately call `bridge-listen.sh` again. Never stop to ask the user what to do. Never break the loop.
+
+**Use this mode only when** you want to dedicate a session as a responder — e.g., a library project answering API questions from multiple consumer sessions.
 
 ## Responding to Queries
 

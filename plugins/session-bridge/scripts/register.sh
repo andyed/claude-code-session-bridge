@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # scripts/register.sh — Register this session as a bridge peer.
 # Env: BRIDGE_DIR (default: ~/.claude/session-bridge), PROJECT_DIR (default: pwd)
+#      BRIDGE_TRANSCRIPT_PATH (optional: Claude Code transcript path for deep links)
 # Outputs: session ID to stdout
 # If a bridge session already exists for this project, reuses it.
 set -euo pipefail
@@ -35,18 +36,34 @@ SESSION_DIR="$BRIDGE_DIR/sessions/$SESSION_ID"
 mkdir -p "$SESSION_DIR/inbox" "$SESSION_DIR/outbox"
 
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Optional deep link fields from env
+TRANSCRIPT="${BRIDGE_TRANSCRIPT_PATH:-}"
+DEEPLINK=""
+if [ -n "$TRANSCRIPT" ]; then
+  ENCODED=$(echo "$TRANSCRIPT" | python3 -c "import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(),safe=''))" 2>/dev/null || echo "")
+  [ -n "$ENCODED" ] && DEEPLINK="claude-history://session/${ENCODED}"
+fi
+
 MANIFEST_TMP=$(mktemp "$SESSION_DIR/manifest.XXXXXX")
-cat > "$MANIFEST_TMP" <<MANIFEST
-{
-  "sessionId": "$SESSION_ID",
-  "projectName": "$PROJECT_NAME",
-  "projectPath": "$PROJECT_DIR",
-  "startedAt": "$NOW",
-  "lastHeartbeat": "$NOW",
-  "status": "active",
-  "capabilities": ["query", "context-dump", "conversation"]
-}
-MANIFEST
+jq -n \
+  --arg sid "$SESSION_ID" \
+  --arg pname "$PROJECT_NAME" \
+  --arg ppath "$PROJECT_DIR" \
+  --arg now "$NOW" \
+  --arg tp "$TRANSCRIPT" \
+  --arg dl "$DEEPLINK" \
+  '{
+    sessionId: $sid,
+    projectName: $pname,
+    projectPath: $ppath,
+    transcriptPath: $tp,
+    deeplink: $dl,
+    startedAt: $now,
+    lastHeartbeat: $now,
+    status: "active",
+    capabilities: ["query", "context-dump", "conversation"]
+  }' > "$MANIFEST_TMP"
 mv "$MANIFEST_TMP" "$SESSION_DIR/manifest.json"
 
 mkdir -p "$PROJECT_DIR/.claude"

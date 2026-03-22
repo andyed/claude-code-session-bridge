@@ -3,6 +3,10 @@
 # Does NOT depend on working directory — scans ~/.claude/session-bridge/sessions/ directly.
 # Usage: check-inbox.sh [--summary-only]
 # Env: BRIDGE_DIR (default: ~/.claude/session-bridge)
+#
+# When called as a UserPromptSubmit hook, stdin contains JSON with session_id and
+# transcript_path. If a registered bridge session lacks transcriptPath in its manifest,
+# this script enriches it on the fly — enabling deep link metadata in messages.
 set -euo pipefail
 
 SUMMARY_ONLY=false
@@ -13,6 +17,11 @@ fi
 BRIDGE_DIR="${BRIDGE_DIR:-$HOME/.claude/session-bridge}"
 SESSIONS_DIR="$BRIDGE_DIR/sessions"
 
+# Consume stdin (hook input) — extract transcript_path for manifest enrichment
+HOOK_INPUT=$(cat 2>/dev/null || true)
+HOOK_TRANSCRIPT=$(echo "$HOOK_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
+
 # No sessions at all — exit silently
 if [ ! -d "$SESSIONS_DIR" ]; then
   echo '{"continue": true}'
@@ -20,6 +29,24 @@ if [ ! -d "$SESSIONS_DIR" ]; then
 fi
 
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Enrich manifest with transcript_path if we have hook data and a matching session
+if [ -n "$HOOK_TRANSCRIPT" ]; then
+  for MANIFEST in "$SESSIONS_DIR"/*/manifest.json; do
+    [ -f "$MANIFEST" ] || continue
+    HAS_TP=$(jq -r '.transcriptPath // empty' "$MANIFEST")
+    if [ -z "$HAS_TP" ]; then
+      ENCODED=$(echo "$HOOK_TRANSCRIPT" | python3 -c "import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(),safe=''))" 2>/dev/null || echo "")
+      if [ -n "$ENCODED" ]; then
+        TMP=$(mktemp "${MANIFEST}.XXXXXX")
+        jq --arg tp "$HOOK_TRANSCRIPT" --arg dl "claude-history://session/${ENCODED}" \
+          '.transcriptPath = $tp | .deeplink = $dl' "$MANIFEST" > "$TMP"
+        mv "$TMP" "$MANIFEST"
+      fi
+      break  # Only enrich first manifest missing transcriptPath (likely ours)
+    fi
+  done
+fi
 
 # Summary-only mode: output state for ALL sessions
 if [ "$SUMMARY_ONLY" = true ]; then

@@ -32,6 +32,22 @@ if [ -f "$SENDER_MANIFEST" ]; then
   SENDER_PROJECT=$(jq -r '.projectName // "unknown"' "$SENDER_MANIFEST")
 fi
 
+# Optional deep link metadata (set via env vars by hooks or callers)
+TRANSCRIPT="${BRIDGE_TRANSCRIPT_PATH:-}"
+MSG_UUID="${BRIDGE_MESSAGE_UUID:-}"
+DEEPLINK=""
+
+# If transcript not provided via env, try reading from manifest
+if [ -z "$TRANSCRIPT" ] && [ -f "$SENDER_MANIFEST" ]; then
+  TRANSCRIPT=$(jq -r '.transcriptPath // ""' "$SENDER_MANIFEST")
+fi
+
+if [ -n "$TRANSCRIPT" ]; then
+  ENCODED=$(echo "$TRANSCRIPT" | python3 -c "import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(),safe=''))" 2>/dev/null || echo "$TRANSCRIPT")
+  DEEPLINK="claude-history://session/${ENCODED}"
+  [ -n "$MSG_UUID" ] && DEEPLINK="${DEEPLINK}?msg=${MSG_UUID}"
+fi
+
 # Format inReplyTo as JSON (null or quoted string)
 if [ "$IN_REPLY_TO" = "null" ]; then
   IN_REPLY_TO_JSON="null"
@@ -48,6 +64,9 @@ MSG_JSON=$(jq -n \
   --arg ts "$NOW" \
   --arg content "$CONTENT" \
   --arg fromProject "$SENDER_PROJECT" \
+  --arg transcript "$TRANSCRIPT" \
+  --arg deeplink "$DEEPLINK" \
+  --arg msgUuid "$MSG_UUID" \
   --argjson inReplyTo "$IN_REPLY_TO_JSON" \
   '{
     id: $id,
@@ -60,7 +79,10 @@ MSG_JSON=$(jq -n \
     inReplyTo: $inReplyTo,
     metadata: {
       urgency: "normal",
-      fromProject: $fromProject
+      fromProject: $fromProject,
+      transcriptPath: $transcript,
+      deeplink: $deeplink,
+      messageUuid: $msgUuid
     }
   }')
 

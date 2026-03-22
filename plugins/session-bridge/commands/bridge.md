@@ -63,7 +63,9 @@ Connect to a peer session. Auto-starts this session's bridge if not already acti
 
 ### `listen`
 
-Enter listening mode — continuously wait for peer messages and respond to them. This dedicates the session to answering peer queries using YOUR FULL CONTEXT.
+Enter **dedicated** listening mode — continuously wait for peer messages and respond to them. This dedicates the session to answering peer queries using YOUR FULL CONTEXT.
+
+> **Note:** For most workflows, you don't need `/bridge listen`. After `/bridge start`, the `UserPromptSubmit` hook automatically checks for incoming messages on every turn. You respond to them first, then continue your own work. Use `/bridge listen` only when you want to dedicate a session as a responder.
 
 **This is a loop. You MUST keep listening until the user interrupts (Ctrl+C).**
 
@@ -191,11 +193,11 @@ Unregister and clean up.
 If no argument is given, show a brief help:
 ```
 Bridge commands:
-  /bridge start              - Register this session
+  /bridge start              - Register this session (messages arrive automatically via hook)
   /bridge connect <id>       - Connect to a peer session
-  /bridge listen             - Listen and answer peer queries (blocks)
   /bridge ask <question>     - Send a question to a peer
   /bridge peers              - List active sessions
   /bridge status             - Show bridge state
+  /bridge listen             - Dedicated listening mode (blocks — usually not needed)
   /bridge stop               - Disconnect and clean up
 ```
