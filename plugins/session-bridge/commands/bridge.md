@@ -39,11 +39,11 @@ Register this session as a bridge peer.
    Use /bridge listen to start receiving and answering peer queries.
    ```
 
-### `connect <session-id>`
+### `connect [session-id]`
 
-Connect to a peer session. Auto-starts this session's bridge if not already active.
+Connect to a peer session. If no session ID is given, auto-discovers available sessions. Auto-starts this session's bridge if not already active.
 
-1. Extract the session ID from the argument.
+1. Extract the session ID from the argument (if provided).
 2. Check if this session has a bridge:
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/get-session-id.sh"
@@ -53,13 +53,19 @@ Connect to a peer session. Auto-starts this session's bridge if not already acti
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/register.sh"
    ```
    Capture the session ID from stdout and note it for the user.
-3. Then connect to the peer:
+3. Then connect to the peer. If no session ID was provided, omit the argument — the script auto-discovers peers:
    ```bash
+   # With explicit ID:
    BRIDGE_SESSION_ID=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/get-session-id.sh") bash "${CLAUDE_PLUGIN_ROOT}/scripts/connect-peer.sh" "<session-id>"
+
+   # Without ID (auto-discover):
+   BRIDGE_SESSION_ID=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/get-session-id.sh") bash "${CLAUDE_PLUGIN_ROOT}/scripts/connect-peer.sh"
    ```
+   - If exactly one other session exists, it auto-connects.
+   - If multiple sessions exist, the script lists them. Pick the most relevant by project name and re-run with that ID.
 4. If successful, display the peer's project name and path. If you auto-started in step 2, also show this session's ID.
 5. If it fails (peer not found), suggest `/bridge peers` to see available sessions.
-6. Tell the user: "Connected! Use `/bridge listen` to start answering peer queries, or `/bridge ask <question>` to ask them something."
+6. Tell the user: "Connected! Use `/bridge ask <question>` to ask them something. Incoming messages arrive automatically."
 
 ### `listen`
 
@@ -194,7 +200,7 @@ If no argument is given, show a brief help:
 ```
 Bridge commands:
   /bridge start              - Register this session (messages arrive automatically via hook)
-  /bridge connect <id>       - Connect to a peer session
+  /bridge connect [id]       - Connect to a peer (auto-discovers if no ID given)
   /bridge ask <question>     - Send a question to a peer
   /bridge peers              - List active sessions
   /bridge status             - Show bridge state
