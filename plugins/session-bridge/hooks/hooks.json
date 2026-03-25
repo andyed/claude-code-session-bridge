@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/check-inbox.sh\"",
-            "async": false
+            "async": true
           }
         ]
       }

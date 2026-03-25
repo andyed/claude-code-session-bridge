@@ -8,9 +8,10 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   </p>
   <p align="center">
-    <a href="#quick-start">Quick Start</a> &middot;
+    <a href="#getting-started">Quick Start</a> &middot;
     <a href="#commands">Commands</a> &middot;
     <a href="#how-it-works">How It Works</a> &middot;
+    <a href="#when-to-use-it">Use Cases</a> &middot;
     <a href="#known-limitations">Limitations</a>
   </p>
 </p>
@@ -20,6 +21,8 @@
 When you're working across multiple repos — a shared library and its consumer app, a backend and frontend, microservices — each Claude Code session is isolated. **session-bridge** lets them talk to each other.
 
 The Library agent answers questions about breaking changes. The Consumer agent asks what API replaced a deprecated function. The agent responds with its **full context** — no approximation, no extra API cost.
+
+Neither session has to stop working. With **cooperative listening**, both sessions stay productive — queries arrive and get answered automatically on the next user turn, no blocking required.
 
 https://github.com/user-attachments/assets/ce893322-5749-42be-9973-e36e60b969a6
 
@@ -62,16 +65,15 @@ Or add to `~/.claude/settings.json` for permanent loading:
 
 Open two terminals — one for each project.
 
-**Terminal 1** (the project that has the answers):
+**Terminal 1** (the library):
 ```
 cd ~/projects/my-library && claude
 
-> /bridge listen
+> /bridge start
 Session ID: a1b2c3
-Listening for peer messages... (Ctrl+C to stop)
 ```
 
-**Terminal 2** (the project that needs answers):
+**Terminal 2** (the consumer app):
 ```
 cd ~/projects/my-app && claude
 
@@ -87,7 +89,7 @@ Response from my-library:
   3. Removed refreshToken() — now automatic
 ```
 
-That's it. The Library agent responds with its **full session context** — it knows what it changed, why, and how. No extra API calls, no approximation.
+That's it. Neither session had to stop what it was doing. The Library agent received the query on its next turn, responded with its **full session context**, and went back to work. No extra API calls, no approximation.
 
 ## Commands
 
@@ -95,19 +97,38 @@ That's it. The Library agent responds with its **full session context** — it k
 |---------|-------------|
 | `/bridge start` | Register this session as a bridge peer |
 | `/bridge connect <id>` | Connect to a peer session (auto-starts if needed) |
-| `/bridge listen` | Enter listening mode — answer peer queries continuously |
 | `/bridge ask <question>` | Send a question and wait for the response |
 | `/bridge peers` | List all active sessions on this machine |
 | `/bridge status` | Show session ID, connected peers, pending messages |
+| `/bridge listen` | Enter dedicated listening mode (blocks session — see below) |
 | `/bridge stop` | Disconnect, notify peers, clean up |
 
 > **Tip:** You don't always need explicit commands. Just tell your agent "ask the library about X" in natural language and it will use the bridge automatically.
 
 ## How It Works
 
-### Listen mode
+### Cooperative listening (default)
 
-The key innovation: `/bridge listen` puts the agent into a **continuous listening loop**. When a query arrives, the agent itself responds — with its full conversation context, not an approximation.
+After `/bridge start`, sessions answer peer queries **automatically** — no dedicated listener needed. The `UserPromptSubmit` hook checks for pending messages on every user turn. When one is found, the agent responds to the query first, then handles the user's actual prompt.
+
+Both sessions stay productive. The tradeoff: responses arrive when the listener's user next interacts. If a session is idle for minutes, queries wait.
+
+```
+1. Session A (library) does /bridge start → ID a1b2c3
+2. Session B (consumer) does /bridge connect a1b2c3
+3. Session B does /bridge ask "What changed in the auth API?"
+4. Session A's user types their next prompt (anything)
+5. Hook fires → agent sees the pending query → responds → continues with user's prompt
+6. Session B receives the answer
+```
+
+### Dedicated listening mode
+
+For instant responses, `/bridge listen` puts the agent into a **continuous listening loop**. The agent does nothing but answer peer queries until the user presses Ctrl+C.
+
+Use this when you need sub-second response times or when the listening session has no other work to do.
+
+### Why it works
 
 - **No background process** — the agent IS the responder
 - **No `claude -p` calls** — zero extra API cost for responses
@@ -205,11 +226,11 @@ g7h8i9     my-app               active   ~/projects/my-app  (you)
 
 ### Do
 
-- **Use `/bridge listen` on the session that has the knowledge** — the one that made the changes, built the feature, or owns the API. It responds with full context.
+- **Just use `/bridge start`** — cooperative listening is the default. Both sessions keep working and answer queries on their next turn.
 - **Use natural language** — "ask the backend what changed" works just as well as `/bridge ask`.
 - **Let agents share real code** — responses include actual file contents, type definitions, and function signatures. Ask for them specifically if the agent gives you prose instead.
 - **Use for version upgrades** — "update to v2.0" will proactively query the peer about breaking changes before even trying to build.
-- **Use back-and-forth** — if the listener needs more info, it'll ask a follow-up question. The consumer answers and re-queries automatically.
+- **Use back-and-forth** — if the responder needs more info, it'll ask a follow-up question. The other side answers and re-queries automatically.
 - **Clean up** — run `/bridge stop` when done, or stale sessions accumulate.
 
 ### Don't
@@ -217,16 +238,19 @@ g7h8i9     my-app               active   ~/projects/my-app  (you)
 - **Don't use it as a chat app** — it's designed for agent-to-agent coordination, not human conversation. The agents talk; you give them tasks.
 - **Don't send secrets** — messages are plain JSON on the local filesystem. No encryption. Don't ask a peer to "send me the API keys."
 - **Don't expect remote access** — both sessions must be on the same machine. It uses the local filesystem (`~/.claude/session-bridge/`), not a network protocol.
-- **Don't run `/bridge listen` on both sides simultaneously** and expect them to talk — one side listens, the other asks. If both listen, neither asks.
 - **Don't use it for large file transfers** — message content is passed as shell arguments. Share file paths or describe locations instead of pasting entire files into queries.
 - **Don't leave sessions running forever** — stale sessions from killed terminals persist until manually cleaned up with `/bridge stop` or `/bridge peers` + cleanup.
-- **Don't expect instant responses** — the listen script polls every 3 seconds, plus the agent needs time to formulate its answer. Round-trip is typically 5-15 seconds.
+- **Don't expect instant responses in cooperative mode** — queries wait until the listener's user next interacts. For faster responses, use `/bridge listen`.
 
 ## Known Limitations
 
-### Session is occupied while listening
+### Response latency in cooperative mode
 
-When a session is in `/bridge listen` mode, it's dedicated to answering peer queries. The user can't use it for other work until they press Ctrl+C. This is by design — it's the trade-off for getting full-context responses at zero extra cost.
+With cooperative listening, queries wait until the responding session's user types their next prompt. If a session is idle for several minutes, the query sits in the inbox. Use `/bridge listen` when you need immediate responses from an otherwise-idle session.
+
+### Session is occupied in dedicated listen mode
+
+When a session is in `/bridge listen` mode, it's dedicated to answering peer queries. The user can't use it for other work until they press Ctrl+C. This only applies to `/bridge listen` — cooperative listening (the default) has no such restriction.
 
 ### Platform support
 
@@ -238,7 +262,7 @@ When a session is in `/bridge listen` mode, it's dedicated to answering peer que
 
 ### Other considerations
 
-- **Polling interval** — `bridge-listen.sh` checks every 3 seconds. Responses are as fast as the agent can formulate them.
+- **Polling interval** — `/bridge listen` checks every 3 seconds. Cooperative mode checks on each user turn.
 - **No encryption** — Messages are plain JSON, protected by Unix file permissions.
 - **Session accumulation** — Crashed sessions may persist. Use `/bridge peers` to check, `/bridge stop` to clean up.
 - **Single machine only** — Communication is via local filesystem. No network/remote support.
